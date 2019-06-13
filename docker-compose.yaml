@@ -1,0 +1,127 @@
+version: '3'
+
+services:
+
+  infra_db:
+    image: mariadb
+    container_name: infra-db
+    restart: on-failure
+    networks:
+      infra_network:
+        ipv4_address: 192.168.100.2
+    environment:
+      MYSQL_ROOT_PASSWORD: R00tPassw0rd!
+      MYSQL_DATABASE: infra
+      MYSQL_USER: servicesuser
+      MYSQL_PASSWORD: s3rv1c3sP@ss
+    volumes:
+      - ./infra/db:/var/lib/mysql
+
+  gerrit:
+    image: gerritcodereview/gerrit
+    container_name: infra-gerrit
+    networks:
+      infra_network:
+        ipv4_address: 192.168.100.3
+    ports:
+      - "29418:29418"
+      - "8080:8080"
+    depends_on:
+      - ldap
+    volumes:
+      - ./gerrit/etc:/var/gerrit/etc
+      - ./gerrit/git:/var/gerrit/git
+      - ./gerrit/db:/var/gerrit/db
+      - ./gerrit/index:/var/gerrit/index
+      - ./gerrit/cache:/var/gerrit/cache
+    environment:
+      - CANONICAL_WEB_URL=http://review.localhost
+    links:
+      - infra_db:db
+    depends_on:
+      - infra_db
+#    entrypoint: /entrypoint.sh init
+
+  ldap:
+    image: osixia/openldap
+    container_name: infra-ldap
+    networks:
+      infra_network:
+        ipv4_address: 192.168.100.4
+    ports:
+      - "389:389"
+      - "636:636"
+    environment:
+      - LDAP_ADMIN_PASSWORD=secret
+    volumes:
+      - ./gerrit/ldap/var:/var/lib/ldap
+      - ./gerrit/ldap/etc:/etc/ldap/slapd.d
+
+  ldap-admin:
+    image: osixia/phpldapadmin
+    container_name: infra-ldapadmin
+    networks:
+      infra_network:
+        ipv4_address: 192.168.100.5
+    ports:
+      - "6443:443"
+    environment:
+      - PHPLDAPADMIN_LDAP_HOSTS=ldap
+
+  nexus:
+    image: sonatype/nexus3
+    container_name: infra-nexus
+    restart: on-failure
+    networks:
+      infra_network:
+        ipv4_address: 192.168.100.6
+    ports:
+      - "8083:8081"
+    environment:
+      - CANONICAL_WEB_URL=http://nexus.localhost
+    volumes:
+      - ./nexus-data:/nexus-data
+
+  jenkins:
+    image: jenkins
+    container_name: infra-jenkins
+    restart: on-failure
+    depends_on:
+      - ldap
+      - infra_db
+    networks:
+      infra_network:
+        ipv4_address: 192.168.100.7
+    ports:
+      - "8081:8081"
+      - "50000:50000"
+    volumes:
+      - ./jenkins:/var/jenkins
+
+  redmine:
+    image: redmine
+    container_name: infra-redmine
+    restart: on-failure
+    depends_on:
+      - ldap
+      - infra_db
+    networks:
+      infra_network:
+        ipv4_address: 192.168.100.8
+    ports:
+      - "8082:3000"
+    environment:
+      - REDMINE_DB_MYSQL=192.168.100.2
+      - REDMINE_DB_DATABASE=infra
+      - REDMINE_DB_USERNAME=servicesuser
+      - REDMINE_DB_PASSWORD=s3rv1c3sP@ss
+    volumes:
+      - ./redmine/files:/usr/src/redmine/files
+
+
+networks:
+  infra_network:
+    ipam:
+      driver: default
+      config:
+        - subnet: "192.168.100.0/24"
